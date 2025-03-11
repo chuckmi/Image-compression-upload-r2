@@ -134,11 +134,61 @@ class ImageCompareWidget(QFrame):
             self.split_position = max(0, min(1, rel_x / self.original_pixmap.width()))
             self.update()
 
+class R2ConfigDialog(QDialog):
+    def __init__(self, r2_config, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("配置 R2")
+        self.setMinimumWidth(400)
+        
+        layout = QVBoxLayout()
+        
+        # 创建输入框
+        self.endpoint_input = QLineEdit(r2_config['endpoint_url'])
+        self.access_key_input = QLineEdit(r2_config['aws_access_key_id'])
+        self.secret_key_input = QLineEdit(r2_config['aws_secret_access_key'])
+        self.bucket_name_input = QLineEdit(r2_config['bucket_name'])
+        self.custom_domain_input = QLineEdit(r2_config['custom_domain'])
+        
+        # 添加输入框到布局
+        layout.addWidget(QLabel("R2 终端节点:"))
+        layout.addWidget(self.endpoint_input)
+        layout.addWidget(QLabel("访问密钥 ID:"))
+        layout.addWidget(self.access_key_input)
+        layout.addWidget(QLabel("访问密钥:"))
+        layout.addWidget(self.secret_key_input)
+        layout.addWidget(QLabel("存储桶名称:"))
+        layout.addWidget(self.bucket_name_input)
+        layout.addWidget(QLabel("自定义域名:"))
+        layout.addWidget(self.custom_domain_input)
+        
+        # 添加按钮
+        button_layout = QHBoxLayout()
+        save_button = QPushButton("保存")
+        save_button.clicked.connect(self.accept)
+        cancel_button = QPushButton("取消")
+        cancel_button.clicked.connect(self.reject)
+        
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def get_config(self):
+        """获取配置"""
+        return {
+            'endpoint_url': self.endpoint_input.text(),
+            'aws_access_key_id': self.access_key_input.text(),
+            'aws_secret_access_key': self.secret_key_input.text(),
+            'bucket_name': self.bucket_name_input.text(),
+            'custom_domain': self.custom_domain_input.text()
+        }
+
 class ImageProcessor(QMainWindow):
     def __init__(self):
         super().__init__()
         # 设置窗口标题
-        self.setWindowTitle("盼趣图片压缩工具")
+        self.setWindowTitle("Panda图片压缩工具")
         
         # 设置窗口图标
         app_icon = QIcon("icon.png")  # 确保 icon.png 在程序目录下
@@ -160,6 +210,9 @@ class ImageProcessor(QMainWindow):
         
         # 加载上次的配置
         self.load_settings()
+        
+        # 加载 R2 配置
+        self.load_r2_config()
             
         # 启动缓存清理线程
         self.start_cache_cleaner()
@@ -199,6 +252,24 @@ class ImageProcessor(QMainWindow):
                 json.dump(current_settings, f)
         except Exception as e:
             print(f"保存配置失败: {str(e)}")
+    
+    def load_r2_config(self):
+        """加载 R2 配置"""
+        self.r2_config = {
+            'endpoint_url': '',
+            'aws_access_key_id': '',
+            'aws_secret_access_key': '',
+            'bucket_name': '',
+            'custom_domain': ''
+        }
+        
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    saved_settings = json.load(f)
+                    self.r2_config.update(saved_settings.get('r2_config', {}))
+        except Exception as e:
+            print(f"加载 R2 配置失败: {str(e)}")
     
     def init_ui(self):
         # 创建主窗口部件
@@ -390,6 +461,11 @@ class ImageProcessor(QMainWindow):
         left_layout.addLayout(link_container)  # 添加链接显示区域
         left_layout.addStretch()  # 添加弹性空间
         
+        # 添加 R2 配置按钮
+        r2_config_button = QPushButton("配置 R2")
+        r2_config_button.clicked.connect(self.open_r2_config_dialog)
+        left_layout.addWidget(r2_config_button)
+        
         left_panel.setLayout(left_layout)
         left_panel.setMaximumWidth(300)  # 限制左侧面板最大宽度
         
@@ -454,6 +530,10 @@ class ImageProcessor(QMainWindow):
         self.save_original.toggled.connect(self.save_settings)
         self.save_to_r2.toggled.connect(self.save_settings)
         self.auto_name_radio.toggled.connect(self.save_settings)
+        
+        # 检查 R2 配置是否存在
+        if not self.r2_config['endpoint_url']:
+            self.open_r2_config_dialog()  # 如果没有配置，打开配置对话框
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -600,9 +680,9 @@ class ImageProcessor(QMainWindow):
         try:
             # 配置R2客户端
             s3 = boto3.client('s3',
-                endpoint_url=R2_CONFIG['endpoint_url'],
-                aws_access_key_id=R2_CONFIG['aws_access_key_id'],
-                aws_secret_access_key=R2_CONFIG['aws_secret_access_key'],
+                endpoint_url=self.r2_config['endpoint_url'],
+                aws_access_key_id=self.r2_config['aws_access_key_id'],
+                aws_secret_access_key=self.r2_config['aws_secret_access_key'],
                 region_name='auto'
             )
             
@@ -615,13 +695,13 @@ class ImageProcessor(QMainWindow):
             r2_path = f"{date_path}/{file_name}"  # 例如: 2024/03/14/image.jpg
             
             # 上传文件
-            s3.upload_file(file_path, R2_CONFIG['bucket_name'], r2_path)
+            s3.upload_file(file_path, self.r2_config['bucket_name'], r2_path)
             
             # 获取文件URL
-            if 'custom_domain' in R2_CONFIG:
-                url = f"https://{R2_CONFIG['custom_domain']}/{r2_path}"
+            if 'custom_domain' in self.r2_config:
+                url = f"https://{self.r2_config['custom_domain']}/{r2_path}"
             else:
-                url = f"https://{R2_CONFIG['bucket_name']}.r2.cloudflarestorage.com/{r2_path}"
+                url = f"https://{self.r2_config['bucket_name']}.r2.cloudflarestorage.com/{r2_path}"
             
             # 更新链接显示
             self.link_text.setText(url)
@@ -629,6 +709,23 @@ class ImageProcessor(QMainWindow):
             
         except Exception as e:
             self.statusBar().showMessage(f"上传到R2失败: {str(e)}")
+
+    def open_r2_config_dialog(self):
+        dialog = R2ConfigDialog(self.r2_config, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.r2_config = dialog.get_config()
+            self.save_r2_config()
+
+    def save_r2_config(self):
+        """保存 R2 配置"""
+        try:
+            current_settings = {
+                'r2_config': self.r2_config
+            }
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(current_settings, f)
+        except Exception as e:
+            print(f"保存 R2 配置失败: {str(e)}")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

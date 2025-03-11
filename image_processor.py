@@ -9,11 +9,19 @@ from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QPixmap, QClipboard, QPaint
 from PIL import Image
 import boto3
 from datetime import datetime, timedelta
-from config import R2_CONFIG
 import shutil
 import time
 import threading
 import json
+
+# 直接在这里定义 R2_CONFIG
+R2_CONFIG = {
+    'endpoint_url': 'https://cb909aba4bc12157417c84091602de13.r2.cloudflarestorage.com',
+    'aws_access_key_id': '20b04261ae2525599fa2123f0e899f37',
+    'aws_secret_access_key': '7b75b9bd1209a6b77b8dcad0dc8ac22d51e1eddae19682e2ec64de998bf495c0',
+    'bucket_name': 'pandatrips',
+    'custom_domain': 'cdn.pandatrips.com'  # 可选
+}
 
 class UploadSuccessDialog(QDialog):
     def __init__(self, url, parent=None):
